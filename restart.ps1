@@ -5,6 +5,7 @@ $launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
 $windowTitlePart = "Launcher"   # Частичный заголовок окна
 $buttonText = "Startup"
 $maxWait = 60                   # Максимум 60 сек ожидания окна и отклика
+$loadWait = 20                  # Ожидание перед поиском кнопки запуска
  
 function Start-Launcher {
     Write-Host "[>] Starting Launcher..."
@@ -54,7 +55,7 @@ function Wait-For-Button {
     param($parentElement, $buttonText)
     Write-Host "[~] Waiting for button '$buttonText'..."
     while ($true) {
-        Start-Sleep -Seconds 1
+        Start-Sleep -Seconds $loadWait
         $condition = New-Object System.Windows.Automation.PropertyCondition `
             ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
  
