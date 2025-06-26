@@ -3,14 +3,14 @@ Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 # === Настройки ===
 $CheckDelaySeconds = 20
 $LoopIntervalSeconds = 10
-$launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
-$launcherProcessName = "Launcher"   # Launcher.exe
-$dotnetProcessName = "dotnet"       # процесс, в котором появляется кнопка
-$windowTitlePart = "Launcher"
-$buttonText = "Startup"
 $maxWait = 60
 $loadWait = 20
 $buttonWaitTimeout = 90
+$launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
+$launcherProcessName = "Launcher"
+$windowTitlePart = "Launcher"
+$dotnetProcessName = "dotnet"
+$buttonText = "Startup"
 $logFile = Join-Path $PSScriptRoot "crash-report.log"
 
 # === Логирование ===
@@ -97,7 +97,6 @@ function Wait-For-Button {
             return $null
         }
 
-        # Проверим, что процесс всё ещё жив
         $dotnetProc = Get-Process -Name "dotnet" -ErrorAction SilentlyContinue
         if (-not $dotnetProc) {
             Log-Message "dotnet.exe process no longer running. Restarting..." "WARN"
@@ -139,7 +138,6 @@ function Restart-Game {
     while ($true) {
         Start-Launcher
 
-        # Ждём окно лаунчера (от dotnet)
         $winElement = Wait-For-Window -titlePart $windowTitlePart -timeout $maxWait
         if (-not $winElement) {
             Log-Message "Launcher window not found. Retrying..." "WARN"
@@ -160,7 +158,6 @@ function Restart-Game {
 
         if (-not $responsive) {
             Log-Message "Launcher hung. Killing and retrying..." "WARN"
-            # Завершаем все dotnet и launcher процессы
             Get-ProcessByName -name $dotnetProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
             Get-ProcessByName -name $launcherProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
