@@ -1,1 +1,1 @@
-Stop-ScheduledTask -TaskName "ИмяЗадачи"
+Stop-ScheduledTask -TaskName "wow"
