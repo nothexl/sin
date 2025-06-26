@@ -212,19 +212,10 @@ while ($true) {
         Log-Message "WoW is not responding. Waiting $CheckDelaySeconds sec..." "WARN"
         Start-Sleep -Seconds $CheckDelaySeconds
         $wowProcess = Get-Process -Name $wowProcessName -ErrorAction SilentlyContinue
-
-        $wowWindow = Get-WindowElementByTitle -titlePart $wowWindowTitlePart
-        $isHung = $false
-        if ($wowWindow) {
-            $isHung = Is-Window-Hung $wowWindow
-        }
-
-        if ($wowProcess -and $wowProcess.Responding -eq $false -and $isHung) {
-            Log-Message "WoW still unresponsive and window hung. Restarting..." "WARN"
+        if ($wowProcess -and $wowProcess.Responding -eq $false) {
+            Log-Message "WoW still unresponsive. Restarting..." "WARN"
             Stop-Process -Name $wowProcessName -Force -ErrorAction SilentlyContinue
             Restart-Game
-        } elseif ($wowProcess -and $wowProcess.Responding -eq $false) {
-            Log-Message "WoW still not responding, but window responded. Skipping restart for now." "WARN"
         }
     }
 
