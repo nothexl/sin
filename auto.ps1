@@ -4,7 +4,8 @@ Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 $CheckDelaySeconds = 20
 $LoopIntervalSeconds = 10
 $launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
-$launcherProcessName = "Launcher"   # имя процесса без .exe, важно проверить
+$launcherProcessName = "Launcher"   # Launcher.exe
+$dotnetProcessName = "dotnet"       # процесс, в котором появляется кнопка
 $windowTitlePart = "Launcher"
 $buttonText = "Startup"
 $maxWait = 60
@@ -24,7 +25,6 @@ function Log-Message {
     Add-Content -Path $logFile -Value $entry
 }
 
-# === UI Automation ===
 function Start-Launcher {
     Log-Message "Starting Launcher..."
     Start-Process -FilePath $launcherPath
@@ -67,8 +67,9 @@ function Is-Window-Hung {
     }
 }
 
-function Get-LauncherProcess {
-    return Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
+function Get-ProcessByName {
+    param($name)
+    return Get-Process -Name $name -ErrorAction SilentlyContinue
 }
 
 function Wait-For-Button {
@@ -83,13 +84,13 @@ function Wait-For-Button {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
-        $launcherProc = Get-LauncherProcess
-        if (-not $launcherProc) {
-            Log-Message "Launcher process not running during button wait. Returning null." "WARN"
+        $dotnetProc = Get-ProcessByName -name $dotnetProcessName
+        if (-not $dotnetProc) {
+            Log-Message "dotnet process not running during button wait. Returning null." "WARN"
             return $null
         }
-        elseif ($launcherProc.Responding -eq $false) {
-            Log-Message "Launcher process not responding during button wait. Returning null." "WARN"
+        elseif ($dotnetProc.Responding -eq $false) {
+            Log-Message "dotnet process not responding during button wait. Returning null." "WARN"
             return $null
         }
 
@@ -128,6 +129,7 @@ function Restart-Game {
     while ($true) {
         Start-Launcher
 
+        # Ждём окно лаунчера (от dotnet)
         $winElement = Wait-For-Window -titlePart $windowTitlePart -timeout $maxWait
         if (-not $winElement) {
             Log-Message "Launcher window not found. Retrying..." "WARN"
@@ -148,7 +150,9 @@ function Restart-Game {
 
         if (-not $responsive) {
             Log-Message "Launcher hung. Killing and retrying..." "WARN"
-            Get-LauncherProcess | Stop-Process -Force -ErrorAction SilentlyContinue
+            # Завершаем все dotnet и launcher процессы
+            Get-ProcessByName -name $dotnetProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-ProcessByName -name $launcherProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
             continue
         }
@@ -156,7 +160,8 @@ function Restart-Game {
         $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds $buttonWaitTimeout
         if (-not $btn) {
             Log-Message "Button '$buttonText' not found or launcher not responsive during wait. Restarting launcher..." "WARN"
-            Get-LauncherProcess | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-ProcessByName -name $dotnetProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-ProcessByName -name $launcherProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
             continue
         }
