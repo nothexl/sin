@@ -4,7 +4,7 @@ Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 $CheckDelaySeconds = 20
 $LoopIntervalSeconds = 10
 $launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
-$launcherProcessName = "Launcher"
+$launcherProcessName = "Launcher"   # имя процесса без .exe, важно проверить
 $windowTitlePart = "Launcher"
 $buttonText = "Startup"
 $maxWait = 60
@@ -67,6 +67,10 @@ function Is-Window-Hung {
     }
 }
 
+function Get-LauncherProcess {
+    return Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
+}
+
 function Wait-For-Button {
     param(
         $parentElement,
@@ -79,8 +83,7 @@ function Wait-For-Button {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
-        # Проверяем процесс лаунчера
-        $launcherProc = Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
+        $launcherProc = Get-LauncherProcess
         if (-not $launcherProc) {
             Log-Message "Launcher process not running during button wait. Returning null." "WARN"
             return $null
@@ -99,7 +102,6 @@ function Wait-For-Button {
             return $null
         }
 
-        # Ищем кнопку по имени и ControlType.Button
         $conditionName = New-Object System.Windows.Automation.PropertyCondition `
             ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
         $conditionType = New-Object System.Windows.Automation.PropertyCondition `
@@ -111,8 +113,6 @@ function Wait-For-Button {
         if ($button) {
             Log-Message "Button '$buttonText' found."
             return $button
-        } else {
-            Log-Message "Button '$buttonText' not found yet. Waiting..."
         }
 
         Start-Sleep -Seconds 1
@@ -142,13 +142,13 @@ function Restart-Game {
                 $responsive = $true
                 break
             }
-            Log-Message "Launcher not responding... waiting..." "WARN"
+            Log-Message "Launcher window not responding... waiting..." "WARN"
             Start-Sleep -Seconds 1
         }
 
         if (-not $responsive) {
             Log-Message "Launcher hung. Killing and retrying..." "WARN"
-            Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-LauncherProcess | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
             continue
         }
@@ -156,7 +156,7 @@ function Restart-Game {
         $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds $buttonWaitTimeout
         if (-not $btn) {
             Log-Message "Button '$buttonText' not found or launcher not responsive during wait. Restarting launcher..." "WARN"
-            Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-LauncherProcess | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
             continue
         }
