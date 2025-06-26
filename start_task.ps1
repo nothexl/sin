@@ -1,1 +1,1 @@
-Start-ScheduledTask -TaskName "ИмяЗадачи"
+Start-ScheduledTask -TaskName "wow"
