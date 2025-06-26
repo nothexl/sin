@@ -6,6 +6,8 @@ $LoopIntervalSeconds = 10
 $maxWait = 60
 $loadWait = 20
 $buttonWaitTimeout = 90
+$wowWindowTitlePart = "World of Warcraft"
+$wowProcessName = "wowclassic"
 $launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
 $launcherProcessName = "Launcher"
 $windowTitlePart = "Launcher"
@@ -191,14 +193,14 @@ while ($true) {
     $blizzardError = Get-Process -Name "BlizzardError" -ErrorAction SilentlyContinue
     if ($blizzardError) {
         Log-Message "BlizzardError.exe detected. Restarting..." "WARN"
-        Stop-Process -Name "wowclassic" -Force -ErrorAction SilentlyContinue
+        Stop-Process -Name $wowProcessName -Force -ErrorAction SilentlyContinue
         Stop-Process -Name "BlizzardError" -Force -ErrorAction SilentlyContinue
         Restart-Game
         Start-Sleep -Seconds $LoopIntervalSeconds
         continue
     }
 
-    $wowProcess = Get-Process -Name "wowclassic" -ErrorAction SilentlyContinue
+    $wowProcess = Get-Process -Name $wowProcessName -ErrorAction SilentlyContinue
     if (-not $wowProcess) {
         Log-Message "WoW not running. Restarting..." "WARN"
         Restart-Game
@@ -209,11 +211,20 @@ while ($true) {
     if ($wowProcess.Responding -eq $false) {
         Log-Message "WoW is not responding. Waiting $CheckDelaySeconds sec..." "WARN"
         Start-Sleep -Seconds $CheckDelaySeconds
-        $wowProcess = Get-Process -Name "wowclassic" -ErrorAction SilentlyContinue
-        if ($wowProcess -and $wowProcess.Responding -eq $false) {
-            Log-Message "WoW still unresponsive. Restarting..." "WARN"
-            Stop-Process -Name "wowclassic" -Force -ErrorAction SilentlyContinue
+        $wowProcess = Get-Process -Name $wowProcessName -ErrorAction SilentlyContinue
+
+        $wowWindow = Get-WindowElementByTitle -titlePart $wowWindowTitlePart
+        $isHung = $false
+        if ($wowWindow) {
+            $isHung = Is-Window-Hung $wowWindow
+        }
+
+        if ($wowProcess -and $wowProcess.Responding -eq $false -and $isHung) {
+            Log-Message "WoW still unresponsive and window hung. Restarting..." "WARN"
+            Stop-Process -Name $wowProcessName -Force -ErrorAction SilentlyContinue
             Restart-Game
+        } elseif ($wowProcess -and $wowProcess.Responding -eq $false) {
+            Log-Message "WoW still not responding, but window responded. Skipping restart for now." "WARN"
         }
     }
 
