@@ -9,6 +9,7 @@ $windowTitlePart = "Launcher"
 $buttonText = "Startup"
 $maxWait = 60
 $loadWait = 20
+$buttonWaitTimeout = 90
 $logFile = Join-Path $PSScriptRoot "crash-report.log"
 
 # === Логирование ===
@@ -70,45 +71,51 @@ function Wait-For-Button {
     param(
         $parentElement,
         $buttonText,
-        [int]$timeoutSeconds = 60
+        [int]$timeoutSeconds = $buttonWaitTimeout
     )
 
-    Log-Message "Waiting for button '$buttonText' (timeout: $timeoutSeconds seconds)..."
-
+    Log-Message "Waiting for button '$buttonText' with timeout $timeoutSeconds seconds..."
     Start-Sleep -Seconds $loadWait
-
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
         # Проверяем процесс лаунчера
         $launcherProc = Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
         if (-not $launcherProc) {
-            Log-Message "Launcher process not found during button wait. Exiting wait." "WARN"
+            Log-Message "Launcher process not running during button wait. Returning null." "WARN"
             return $null
         }
         elseif ($launcherProc.Responding -eq $false) {
-            Log-Message "Launcher process not responding during button wait. Exiting wait." "WARN"
+            Log-Message "Launcher process not responding during button wait. Returning null." "WARN"
             return $null
         }
 
         if (-not $parentElement) {
-            Log-Message "Launcher window element lost." "WARN"
+            Log-Message "Launcher window element lost during button wait." "WARN"
             return $null
         }
-
         if (Is-Window-Hung $parentElement) {
-            Log-Message "Launcher window hung." "WARN"
+            Log-Message "Launcher window hung during button wait." "WARN"
             return $null
         }
 
-        $condition = New-Object System.Windows.Automation.PropertyCondition `
+        # Ищем кнопку по имени и ControlType.Button
+        $conditionName = New-Object System.Windows.Automation.PropertyCondition `
             ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
+        $conditionType = New-Object System.Windows.Automation.PropertyCondition `
+            ([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+        $condition = New-Object System.Windows.Automation.AndCondition($conditionName, $conditionType)
+
         $button = $parentElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+
         if ($button) {
+            Log-Message "Button '$buttonText' found."
             return $button
+        } else {
+            Log-Message "Button '$buttonText' not found yet. Waiting..."
         }
 
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Seconds 1
     }
 
     Log-Message "Timeout reached while waiting for button '$buttonText'." "WARN"
@@ -120,6 +127,7 @@ function Restart-Game {
 
     while ($true) {
         Start-Launcher
+
         $winElement = Wait-For-Window -titlePart $windowTitlePart -timeout $maxWait
         if (-not $winElement) {
             Log-Message "Launcher window not found. Retrying..." "WARN"
@@ -145,7 +153,7 @@ function Restart-Game {
             continue
         }
 
-        $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds 90
+        $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds $buttonWaitTimeout
         if (-not $btn) {
             Log-Message "Button '$buttonText' not found or launcher not responsive during wait. Restarting launcher..." "WARN"
             Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
