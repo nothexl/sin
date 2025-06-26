@@ -1,0 +1,1 @@
+Stop-ScheduledTask -TaskName "ИмяЗадачи"
