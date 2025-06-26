@@ -74,39 +74,36 @@ function Get-ProcessByName {
 
 function Wait-For-Button {
     param(
-        $parentElement,
-        $buttonText,
+        [string]$titlePart,
+        [string]$buttonText,
         [int]$timeoutSeconds = $buttonWaitTimeout
     )
 
-    Log-Message "Waiting for button '$buttonText' with timeout $timeoutSeconds seconds..."
+    Log-Message "Waiting for button '$buttonText' in window '$titlePart' with timeout $timeoutSeconds seconds..."
     Start-Sleep -Seconds $loadWait
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
 
-        # Проверяем, существует ли ещё окно
-        try {
-            $name = $parentElement.Current.Name | Out-Null
-        } catch {
-            Log-Message "Parent window element no longer valid. Likely closed. Restarting..." "WARN"
+        $window = Get-WindowElementByTitle -titlePart $titlePart
+
+        if (-not $window) {
+            Log-Message "Launcher window no longer exists. Restarting..." "WARN"
             return $null
         }
 
-        # Дополнительно проверим, что процесс dotnet ещё существует
-        $dotnetProc = Get-Process -Name "dotnet" -ErrorAction SilentlyContinue
-        if (-not $dotnetProc) {
-            Log-Message "Process 'dotnet' no longer exists. Restarting..." "WARN"
-            return $null
-        }
-
-        # Проверка зависания
-        if (Is-Window-Hung $parentElement) {
+        if (Is-Window-Hung $window) {
             Log-Message "Window is hung. Restarting..." "WARN"
             return $null
         }
 
-        # Ищем кнопку
+        # Проверим, что процесс всё ещё жив
+        $dotnetProc = Get-Process -Name "dotnet" -ErrorAction SilentlyContinue
+        if (-not $dotnetProc) {
+            Log-Message "dotnet.exe process no longer running. Restarting..." "WARN"
+            return $null
+        }
+
         try {
             $conditionName = New-Object System.Windows.Automation.PropertyCondition `
                 ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
@@ -116,7 +113,7 @@ function Wait-For-Button {
 
             $condition = New-Object System.Windows.Automation.AndCondition($conditionName, $conditionType)
 
-            $button = $parentElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+            $button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
 
             if ($button) {
                 Log-Message "Button '$buttonText' found and ready."
@@ -124,14 +121,15 @@ function Wait-For-Button {
             } else {
                 Log-Message "Button '$buttonText' not yet available. Retrying..."
             }
+
         } catch {
-            Log-Message "Error while searching for button: $_" "WARN"
+            Log-Message "Exception during button search: $_" "WARN"
         }
 
         Start-Sleep -Seconds 1
     }
 
-    Log-Message "Timeout reached while waiting for button '$buttonText'." "WARN"
+    Log-Message "Timeout reached while waiting for button '$buttonText'. Restarting..." "WARN"
     return $null
 }
 
@@ -169,7 +167,7 @@ function Restart-Game {
             continue
         }
 
-        $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds $buttonWaitTimeout
+       $btn = Wait-For-Button -titlePart $windowTitlePart -buttonText $buttonText
         if (-not $btn) {
             Log-Message "Button '$buttonText' not found or launcher not responsive during wait. Restarting launcher..." "WARN"
             Get-ProcessByName -name $dotnetProcessName | Stop-Process -Force -ErrorAction SilentlyContinue
