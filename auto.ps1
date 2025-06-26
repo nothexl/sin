@@ -4,12 +4,12 @@ Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 $CheckDelaySeconds = 20
 $LoopIntervalSeconds = 10
 $launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
+$launcherProcessName = "Launcher"
 $windowTitlePart = "Launcher"
 $buttonText = "Startup"
 $maxWait = 60
 $loadWait = 20
 $logFile = Join-Path $PSScriptRoot "crash-report.log"
-$launcherProcessName = "Launcher"  # Имя процесса лаунчера без расширения
 
 # === Логирование ===
 function Log-Message {
@@ -80,10 +80,22 @@ function Wait-For-Button {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
+        # Проверяем процесс лаунчера
+        $launcherProc = Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
+        if (-not $launcherProc) {
+            Log-Message "Launcher process not found during button wait. Exiting wait." "WARN"
+            return $null
+        }
+        elseif ($launcherProc.Responding -eq $false) {
+            Log-Message "Launcher process not responding during button wait. Exiting wait." "WARN"
+            return $null
+        }
+
         if (-not $parentElement) {
             Log-Message "Launcher window element lost." "WARN"
             return $null
         }
+
         if (Is-Window-Hung $parentElement) {
             Log-Message "Launcher window hung." "WARN"
             return $null
@@ -106,112 +118,82 @@ function Wait-For-Button {
 function Restart-Game {
     Log-Message "Restarting game via launcher..."
 
-    Start-Launcher
-
-    $winElement = Wait-For-Window -titlePart $windowTitlePart -timeout $maxWait
-    if (-not $winElement) {
-        Log-Message "Launcher window not found after start." "WARN"
-        return $false
-    }
-
-    for ($i = 0; $i -lt $maxWait; $i++) {
-        if (-not (Is-Window-Hung $winElement)) {
-            Log-Message "Launcher window is responsive."
-            break
+    while ($true) {
+        Start-Launcher
+        $winElement = Wait-For-Window -titlePart $windowTitlePart -timeout $maxWait
+        if (-not $winElement) {
+            Log-Message "Launcher window not found. Retrying..." "WARN"
+            Start-Sleep -Seconds 2
+            continue
         }
-        Log-Message "Launcher window not responding, waiting..." "WARN"
-        Start-Sleep -Seconds 1
-    }
 
-    if (Is-Window-Hung $winElement) {
-        Log-Message "Launcher window hung after wait. Killing launcher process." "WARN"
-        Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        return $false
-    }
+        $responsive = $false
+        for ($i = 0; $i -lt $maxWait; $i++) {
+            if (-not (Is-Window-Hung $winElement)) {
+                Log-Message "Launcher window is responsive."
+                $responsive = $true
+                break
+            }
+            Log-Message "Launcher not responding... waiting..." "WARN"
+            Start-Sleep -Seconds 1
+        }
 
-    $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds 90
-    if (-not $btn) {
-        Log-Message "Button '$buttonText' not found within timeout. Launcher might still be updating." "WARN"
-        return $false
-    }
+        if (-not $responsive) {
+            Log-Message "Launcher hung. Killing and retrying..." "WARN"
+            Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            continue
+        }
 
-    try {
-        $invoke = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-        $invoke.Invoke()
-        Log-Message "Button '$buttonText' clicked."
-        return $true
-    } catch {
-        Log-Message "Failed to click the button: $_" "ERROR"
-        return $false
+        $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds 90
+        if (-not $btn) {
+            Log-Message "Button '$buttonText' not found or launcher not responsive during wait. Restarting launcher..." "WARN"
+            Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            continue
+        }
+
+        try {
+            $invoke = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            $invoke.Invoke()
+            Log-Message "Button '$buttonText' clicked."
+            break
+        } catch {
+            Log-Message "Failed to click the button: $_" "ERROR"
+            exit 2
+        }
     }
 }
 
 # === Основной цикл ===
 
-Set-Location -Path $PSScriptRoot
-
 while ($true) {
-
-    # Проверяем лаунчер
-    $launcherProc = Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
-
-    if (-not $launcherProc) {
-        Log-Message "Launcher process not running. Starting launcher." "WARN"
-        Restart-Game | Out-Null
-    }
-    elseif ($launcherProc.Responding -eq $false) {
-        Log-Message "Launcher process not responding. Waiting $CheckDelaySeconds sec..." "WARN"
-        Start-Sleep -Seconds $CheckDelaySeconds
-
-        $launcherProc = Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
-        if ($launcherProc -and $launcherProc.Responding -eq $false) {
-            Log-Message "Launcher still not responding. Restarting launcher." "WARN"
-            Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Restart-Game | Out-Null
-        }
-    }
-    else {
-        # Лаунчер жив и отвечает — проверяем кнопку
-        $winElement = Get-WindowElementByTitle -titlePart $windowTitlePart
-        if ($winElement) {
-            $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText -timeoutSeconds 10
-            if ($btn) {
-                # Кнопка есть — всё ок, ничего не делаем
-            }
-            else {
-                Log-Message "Button '$buttonText' not found yet, launcher might be updating." "INFO"
-            }
-        }
-        else {
-            Log-Message "Launcher window disappeared, restarting launcher." "WARN"
-            Restart-Game | Out-Null
-        }
-    }
-
-    # Проверяем BlizzardError
     $blizzardError = Get-Process -Name "BlizzardError" -ErrorAction SilentlyContinue
     if ($blizzardError) {
-        Log-Message "BlizzardError.exe detected. Restarting WoW and Launcher..." "WARN"
+        Log-Message "BlizzardError.exe detected. Restarting..." "WARN"
         Stop-Process -Name "wowclassic" -Force -ErrorAction SilentlyContinue
         Stop-Process -Name "BlizzardError" -Force -ErrorAction SilentlyContinue
-        Restart-Game | Out-Null
+        Restart-Game
+        Start-Sleep -Seconds $LoopIntervalSeconds
+        continue
     }
 
-    # Проверяем WoW
     $wowProcess = Get-Process -Name "wowclassic" -ErrorAction SilentlyContinue
     if (-not $wowProcess) {
-        Log-Message "WoW not running. Restarting Launcher..." "WARN"
-        Restart-Game | Out-Null
+        Log-Message "WoW not running. Restarting..." "WARN"
+        Restart-Game
+        Start-Sleep -Seconds $LoopIntervalSeconds
+        continue
     }
-    elseif ($wowProcess.Responding -eq $false) {
+
+    if ($wowProcess.Responding -eq $false) {
         Log-Message "WoW is not responding. Waiting $CheckDelaySeconds sec..." "WARN"
         Start-Sleep -Seconds $CheckDelaySeconds
-
         $wowProcess = Get-Process -Name "wowclassic" -ErrorAction SilentlyContinue
         if ($wowProcess -and $wowProcess.Responding -eq $false) {
-            Log-Message "WoW still unresponsive. Restarting Launcher..." "WARN"
+            Log-Message "WoW still unresponsive. Restarting..." "WARN"
             Stop-Process -Name "wowclassic" -Force -ErrorAction SilentlyContinue
-            Restart-Game | Out-Null
+            Restart-Game
         }
     }
 
