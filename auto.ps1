@@ -85,16 +85,28 @@ function Wait-For-Button {
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
 
-        if (-not $parentElement) {
-            Log-Message "Launcher window element lost. Retrying..." "WARN"
+        # Проверяем, существует ли ещё окно
+        try {
+            $name = $parentElement.Current.Name | Out-Null
+        } catch {
+            Log-Message "Parent window element no longer valid. Likely closed. Restarting..." "WARN"
             return $null
         }
 
+        # Дополнительно проверим, что процесс dotnet ещё существует
+        $dotnetProc = Get-Process -Name "dotnet" -ErrorAction SilentlyContinue
+        if (-not $dotnetProc) {
+            Log-Message "Process 'dotnet' no longer exists. Restarting..." "WARN"
+            return $null
+        }
+
+        # Проверка зависания
         if (Is-Window-Hung $parentElement) {
-            Log-Message "Launcher window hung during button wait." "WARN"
+            Log-Message "Window is hung. Restarting..." "WARN"
             return $null
         }
 
+        # Ищем кнопку
         try {
             $conditionName = New-Object System.Windows.Automation.PropertyCondition `
                 ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
@@ -112,9 +124,8 @@ function Wait-For-Button {
             } else {
                 Log-Message "Button '$buttonText' not yet available. Retrying..."
             }
-
         } catch {
-            Log-Message "Error during button search: $_" "WARN"
+            Log-Message "Error while searching for button: $_" "WARN"
         }
 
         Start-Sleep -Seconds 1
