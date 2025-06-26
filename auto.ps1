@@ -84,36 +84,37 @@ function Wait-For-Button {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
-        $dotnetProc = Get-ProcessByName -name $dotnetProcessName
-        if (-not $dotnetProc) {
-            Log-Message "dotnet process not running during button wait. Returning null." "WARN"
-            return $null
-        }
-        elseif ($dotnetProc.Responding -eq $false) {
-            Log-Message "dotnet process not responding during button wait. Returning null." "WARN"
+
+        if (-not $parentElement) {
+            Log-Message "Launcher window element lost. Retrying..." "WARN"
             return $null
         }
 
-        if (-not $parentElement) {
-            Log-Message "Launcher window element lost during button wait." "WARN"
-            return $null
-        }
         if (Is-Window-Hung $parentElement) {
             Log-Message "Launcher window hung during button wait." "WARN"
             return $null
         }
 
-        $conditionName = New-Object System.Windows.Automation.PropertyCondition `
-            ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
-        $conditionType = New-Object System.Windows.Automation.PropertyCondition `
-            ([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-        $condition = New-Object System.Windows.Automation.AndCondition($conditionName, $conditionType)
+        try {
+            $conditionName = New-Object System.Windows.Automation.PropertyCondition `
+                ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
 
-        $button = $parentElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+            $conditionType = New-Object System.Windows.Automation.PropertyCondition `
+                ([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
 
-        if ($button) {
-            Log-Message "Button '$buttonText' found."
-            return $button
+            $condition = New-Object System.Windows.Automation.AndCondition($conditionName, $conditionType)
+
+            $button = $parentElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+
+            if ($button) {
+                Log-Message "Button '$buttonText' found and ready."
+                return $button
+            } else {
+                Log-Message "Button '$buttonText' not yet available. Retrying..."
+            }
+
+        } catch {
+            Log-Message "Error during button search: $_" "WARN"
         }
 
         Start-Sleep -Seconds 1
