@@ -3,11 +3,12 @@ Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 # === Настройки ===
 $CheckDelaySeconds = 20
 $LoopIntervalSeconds = 10
-$launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
-$windowTitlePart = "Launcher"
-$buttonText = "Startup"
 $maxWait = 60
 $loadWait = 20
+$launcherPath = Join-Path $PSScriptRoot "Launcher.exe"
+$windowTitlePart = "Launcher"
+$launcherProcessName = "Launcher"
+$buttonText = "Startup"
 $logFile = Join-Path $PSScriptRoot "crash-report.log"
 
 # === Логирование ===
@@ -66,16 +67,39 @@ function Is-Window-Hung {
 }
 
 function Wait-For-Button {
-    param($parentElement, $buttonText)
+    param(
+        $parentElement,
+        $buttonText,
+        $launcherProcessName = $launcherProcessName
+    )
+
     Log-Message "Waiting for button '$buttonText'..."
     Start-Sleep -Seconds $loadWait
+
     while ($true) {
+        if (-not $parentElement) {
+            Log-Message "Launcher window element lost (null)." "WARN"
+            return $null
+        }
+        if (Is-Window-Hung $parentElement) {
+            Log-Message "Launcher window is hung or not responding." "WARN"
+            return $null
+        }
+
+        $launcherProc = Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue
+        if (-not $launcherProc) {
+            Log-Message "Launcher process not found." "WARN"
+            return $null
+        }
+
         $condition = New-Object System.Windows.Automation.PropertyCondition `
             ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
         $button = $parentElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
         if ($button) {
             return $button
         }
+
+        Start-Sleep -Milliseconds 500
     }
 }
 
@@ -110,6 +134,13 @@ function Restart-Game {
         }
 
         $btn = Wait-For-Button -parentElement $winElement -buttonText $buttonText
+        if (-not $btn) {
+            Log-Message "Button '$buttonText' not found because window or process closed. Restarting launcher..." "WARN"
+            Get-Process -Name $launcherProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            continue
+        }
+
         try {
             $invoke = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
             $invoke.Invoke()
@@ -123,6 +154,7 @@ function Restart-Game {
 }
 
 # === Основной цикл ===
+Set-Location -Path $PSScriptRoot
 
 while ($true) {
     $blizzardError = Get-Process -Name "BlizzardError" -ErrorAction SilentlyContinue
