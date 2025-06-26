@@ -54,8 +54,8 @@ function Is-Window-Hung {
 function Wait-For-Button {
     param($parentElement, $buttonText)
     Write-Host "[~] Waiting for button '$buttonText'..."
+    Start-Sleep -Seconds $loadWait
     while ($true) {
-        Start-Sleep -Seconds $loadWait
         $condition = New-Object System.Windows.Automation.PropertyCondition `
             ([System.Windows.Automation.AutomationElement]::NameProperty, $buttonText)
  
